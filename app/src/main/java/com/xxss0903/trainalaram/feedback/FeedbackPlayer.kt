@@ -51,6 +51,18 @@ class FeedbackPlayer(context: Context) {
         vibrate(longArrayOf(0L, 300L))
     }
 
+    /** 暂停：低沉单声，表示计时已冻结 */
+    fun onPaused() {
+        beep(ToneGenerator.TONE_PROP_BEEP, 200)
+        vibrate(longArrayOf(0L, 120L))
+    }
+
+    /** 继续：轻快双声，表示计时恢复 */
+    fun onResumed() {
+        beep(ToneGenerator.TONE_PROP_ACK, 160)
+        vibrate(longArrayOf(0L, 60L, 70L, 60L))
+    }
+
     /** 阶段结束前 3 秒的提示音 */
     fun onCountdownTick() {
         beep(ToneGenerator.TONE_PROP_BEEP, 90)

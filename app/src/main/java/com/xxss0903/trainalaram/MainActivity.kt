@@ -24,6 +24,7 @@ import com.xxss0903.trainalaram.databinding.ItemSetRecordBinding
 import com.xxss0903.trainalaram.feedback.FeedbackPlayer
 import com.xxss0903.trainalaram.timer.EngineEvent
 import com.xxss0903.trainalaram.timer.Exercise
+import com.xxss0903.trainalaram.timer.ExerciseMode
 import com.xxss0903.trainalaram.timer.ExerciseRun
 import com.xxss0903.trainalaram.timer.ExerciseStatus
 import com.xxss0903.trainalaram.timer.SessionState
@@ -56,7 +57,9 @@ class MainActivity : AppCompatActivity() {
     private var lastStatsText = ""
     private var lastRecordText = ""
     private var lastMainText = ""
+    private var lastPauseText = ""
     private var lastRenderedPhase: WorkoutPhase? = null
+    private var lastRenderedPaused = false
     private var lastBeepSecond = -1L
 
     /** 界面刷新间隔：100ms，保证进度反馈与操作响应足够跟手 */
@@ -96,6 +99,7 @@ class MainActivity : AppCompatActivity() {
         engine.tick()
 
         binding.btnMain.setOnClickListener { onPrimaryAction() }
+        binding.btnPause.setOnClickListener { onTogglePause() }
         binding.btnPlan.setOnClickListener { showPlanDialog() }
         binding.btnSettings.setOnClickListener { showSettingsDialog() }
         binding.btnReset.setOnClickListener { confirmReset() }
@@ -136,6 +140,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------ 主流程
+
+    /**
+     * 暂停 / 继续：暂停后锻炼与休息的倒计时、次数型动作的秒表全部冻结，
+     * 主按钮被锁定，必须继续后才能推进。
+     */
+    private fun onTogglePause() {
+        if (!engine.isPauseAvailable) return
+        if (engine.togglePause()) {
+            if (engine.paused) feedback.onPaused() else feedback.onResumed()
+            persist()
+        }
+        render()
+    }
 
     private fun onPrimaryAction() {
         if (engine.plan.isEmpty()) {
@@ -200,8 +217,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun render() {
         val phase = engine.phase
-        if (phase != lastRenderedPhase) {
+        val paused = engine.paused
+        if (phase != lastRenderedPhase || paused != lastRenderedPaused) {
             lastRenderedPhase = phase
+            lastRenderedPaused = paused
             lastBeepSecond = -1L
             lastTimeText = ""
             bindPhase(phase)
@@ -211,20 +230,39 @@ class MainActivity : AppCompatActivity() {
         bindOverall()
         bindStatistics()
         bindMainButton()
+        bindPauseButton()
         binding.btnRecords.visibility = if (engine.currentRun == null) View.INVISIBLE else View.VISIBLE
 
-        val remaining = engine.remainingMs()
-        val text = formatCountdown(remaining)
+        val text = timerText()
         if (text != lastTimeText) {
             lastTimeText = text
             binding.tvTime.text = text
-            countdownBeep(remaining)
+            countdownBeep(engine.remainingMs())
             persist()
         }
         binding.ring.setProgress(engine.phaseProgress())
     }
 
+    /**
+     * 主区大号计时：次数型动作的锻炼阶段没有倒计时，改为正向秒表；
+     * 其余阶段仍为倒计时（暂停时由引擎冻结数值）。
+     */
+    private fun timerText(): String {
+        val repsRunning = engine.phase == WorkoutPhase.WORK &&
+            engine.currentExercise?.isRepsMode == true
+        return if (repsRunning) formatDuration(engine.workElapsedMs()) else formatCountdown(engine.remainingMs())
+    }
+
     private fun bindPhase(phase: WorkoutPhase) {
+        // 暂停态优先展示，避免用户误以为计时仍在走
+        if (engine.paused) {
+            val accent = ContextCompat.getColor(this, R.color.accent_idle)
+            binding.ring.setRingColor(accent)
+            binding.tvPhase.setTextColor(accent)
+            binding.tvPhase.setText(R.string.phase_paused)
+            binding.btnMain.backgroundTintList = ColorStateList.valueOf(accent)
+            return
+        }
         val accentRes = when (phase) {
             WorkoutPhase.WORK -> R.color.accent_work
             WorkoutPhase.REST -> R.color.accent_rest
@@ -323,6 +361,7 @@ class MainActivity : AppCompatActivity() {
     private fun bindMainButton() {
         val run = engine.currentRun
         val text = when {
+            engine.paused -> getString(R.string.action_paused_hint)
             run == null -> getString(R.string.action_add_exercise)
             engine.sessionState == SessionState.COMPLETED -> getString(R.string.action_all_done)
             else -> when (engine.phase) {
@@ -336,6 +375,26 @@ class MainActivity : AppCompatActivity() {
             }
         }
         lastMainText = applyText(binding.btnMain, text, lastMainText)
+
+        // 暂停期间锁定主流程：按钮不可点击，必须继续后才能推进
+        val enabled = !engine.paused
+        binding.btnMain.isEnabled = enabled
+        binding.btnMain.alpha = if (enabled) 1f else DISABLED_ALPHA
+    }
+
+    private fun bindPauseButton() {
+        val available = engine.isPauseAvailable
+        binding.btnPause.isEnabled = available
+        binding.btnPause.alpha = if (available) 1f else DISABLED_ALPHA
+
+        val text = getString(if (engine.paused) R.string.action_resume else R.string.action_pause)
+        if (text != lastPauseText) {
+            lastPauseText = text
+            binding.btnPause.text = text
+            binding.btnPause.setTextColor(
+                ContextCompat.getColor(this, if (engine.paused) R.color.accent_work else R.color.accent_idle)
+            )
+        }
     }
 
     private fun exerciseStatusText(status: ExerciseStatus): String = getString(
@@ -348,6 +407,7 @@ class MainActivity : AppCompatActivity() {
 
     /** 阶段结束前 3 秒给出提示音，便于低头看表前的预判 */
     private fun countdownBeep(remainingMs: Long) {
+        if (engine.paused) return
         val phase = engine.phase
         if (phase != WorkoutPhase.WORK && phase != WorkoutPhase.REST) return
         val second = (remainingMs + 999L) / 1000L
@@ -405,13 +465,22 @@ class MainActivity : AppCompatActivity() {
                         }
                     )
                 )
-                item.tvDetail.text = getString(
-                    R.string.plan_item_detail,
-                    run.exercise.targetSets,
-                    run.exercise.targetReps,
-                    run.exercise.workSec,
-                    run.exercise.restSec
-                )
+                item.tvDetail.text = if (run.exercise.isRepsMode) {
+                    getString(
+                        R.string.plan_item_detail_reps,
+                        run.exercise.targetSets,
+                        run.exercise.targetReps,
+                        run.exercise.restSec
+                    )
+                } else {
+                    getString(
+                        R.string.plan_item_detail,
+                        run.exercise.targetSets,
+                        run.exercise.targetReps,
+                        run.exercise.workSec,
+                        run.exercise.restSec
+                    )
+                }
 
                 val canUp = editable && index > 0
                 val canDown = editable && index < plan.size - 1
@@ -465,6 +534,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun showExerciseEditor(existing: Exercise?, onSaved: () -> Unit) {
         val dialogBinding = DialogExerciseEditBinding.inflate(layoutInflater)
+        val initialMode = if (existing?.isRepsMode == true) ExerciseMode.REPS else ExerciseMode.TIME
+        dialogBinding.chipModeTime.isChecked = initialMode == ExerciseMode.TIME
+        dialogBinding.chipModeReps.isChecked = initialMode == ExerciseMode.REPS
+
         if (existing == null) {
             dialogBinding.inputName.setText(
                 getString(R.string.default_exercise_name, engine.plan.size + 1)
@@ -479,6 +552,21 @@ class MainActivity : AppCompatActivity() {
             dialogBinding.inputReps.setText(existing.targetReps.toString())
             dialogBinding.inputWork.setText(existing.workSec.toString())
             dialogBinding.inputRest.setText(existing.restSec.toString())
+        }
+
+        // 次数型动作没有倒计时，隐藏锻炼时长与时长预设
+        val applyMode: (ExerciseMode) -> Unit = { mode ->
+            val repsMode = mode == ExerciseMode.REPS
+            val visibility = if (repsMode) View.GONE else View.VISIBLE
+            dialogBinding.inputWork.visibility = visibility
+            dialogBinding.tvPresetsLabel.visibility = visibility
+            dialogBinding.chipPresets.visibility = visibility
+            dialogBinding.tvModeHint.visibility = if (repsMode) View.VISIBLE else View.GONE
+        }
+        applyMode(initialMode)
+
+        dialogBinding.chipMode.setOnCheckedChangeListener { _, checkedId ->
+            applyMode(if (checkedId == R.id.chip_mode_reps) ExerciseMode.REPS else ExerciseMode.TIME)
         }
 
         dialogBinding.chipPresets.setOnCheckedChangeListener { group, checkedId ->
@@ -503,22 +591,28 @@ class MainActivity : AppCompatActivity() {
                 val name = dialogBinding.inputName.text.toString()
                 val sets = dialogBinding.inputSets.text.toString().toIntOrNull()
                 val reps = dialogBinding.inputReps.text.toString().toIntOrNull()
-                val work = dialogBinding.inputWork.text.toString().toIntOrNull()
                 val rest = dialogBinding.inputRest.text.toString().toIntOrNull()
-                val valid = sets != null && reps != null && work != null && rest != null &&
+                val work = dialogBinding.inputWork.text.toString().toIntOrNull()
+                val repsMode = dialogBinding.chipModeReps.isChecked
+                val mode = if (repsMode) ExerciseMode.REPS else ExerciseMode.TIME
+                // 次数型动作的锻炼时长不参与配置，沿用输入框中的存量值
+                val effectiveWork = work ?: WorkoutLimits.DEFAULT_WORK_SEC
+                val valid = sets != null && reps != null && rest != null &&
                     sets in WorkoutLimits.MIN_SETS..WorkoutLimits.MAX_SETS &&
                     reps in WorkoutLimits.MIN_REPS..WorkoutLimits.MAX_REPS &&
-                    work in WorkoutLimits.MIN_WORK_SEC..WorkoutLimits.MAX_SEC &&
-                    rest in WorkoutLimits.MIN_REST_SEC..WorkoutLimits.MAX_SEC
+                    rest in WorkoutLimits.MIN_REST_SEC..WorkoutLimits.MAX_SEC &&
+                    (repsMode || (work != null && work in WorkoutLimits.MIN_WORK_SEC..WorkoutLimits.MAX_SEC))
                 if (!valid) {
                     Toast.makeText(this, R.string.invalid_input, Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
                 val ok = if (existing == null) {
-                    engine.addExercise(name, work!!, rest!!, sets!!, reps!!)
+                    engine.addExercise(name, effectiveWork, rest!!, sets!!, reps!!, mode)
                     true
                 } else {
-                    engine.updateExercise(Exercise.create(existing.id, name, sets!!, work!!, rest!!, reps!!))
+                    engine.updateExercise(
+                        Exercise.create(existing.id, name, sets!!, effectiveWork, rest!!, reps!!, mode)
+                    )
                 }
                 if (!ok) {
                     Toast.makeText(this, R.string.plan_locked_action, Toast.LENGTH_SHORT).show()

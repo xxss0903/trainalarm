@@ -10,12 +10,13 @@
     android:paddingEnd="@dimen/screen_padding"
     tools:context=".MainActivity">
 
-    <!-- 顶部：计划 / 设置 / 重置，均为一次点击可达 -->
+    <!-- 顶部：计划 / 暂停 / 设置 / 重置，均为一次点击可达 -->
     <LinearLayout
         android:id="@+id/top_bar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/top_action_padding"
+        android:gravity="center_vertical"
         android:orientation="horizontal"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -31,6 +32,21 @@
             android:padding="8dp"
             android:text="@string/action_plan"
             android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/btn_pause"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/bg_status_chip"
+            android:paddingStart="14dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="6dp"
+            android:text="@string/action_pause"
+            android:textColor="@color/accent_idle"
             android:textSize="14sp" />
 
         <TextView

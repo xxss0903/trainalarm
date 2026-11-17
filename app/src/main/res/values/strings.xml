@@ -20,6 +20,12 @@
     <string name="action_add_exercise">请先添加训练动作</string>
     <string name="default_exercise_name">动作 %1$d</string>
 
+    <!-- 暂停 / 继续 -->
+    <string name="action_pause">暂停</string>
+    <string name="action_resume">继续</string>
+    <string name="phase_paused">已暂停 · 计时已冻结</string>
+    <string name="action_paused_hint">已暂停 · 继续后可推进</string>
+
     <!-- 顶部操作 -->
     <string name="action_plan">计划</string>
     <string name="action_settings">设置</string>
@@ -54,6 +60,7 @@
     <string name="plan_edit">编辑</string>
     <string name="plan_delete">删除</string>
     <string name="plan_item_detail">%1$d 组 × %2$d 次 · %3$d/%4$d 秒</string>
+    <string name="plan_item_detail_reps">%1$d 组 × %2$d 次 · 组间休息 %3$d 秒</string>
     <string name="plan_delete_title">删除动作</string>
     <string name="plan_delete_message">确定要删除「%1$s」吗？</string>
     <string name="plan_locked_action">训练进行中，暂不可增删或排序</string>
@@ -67,6 +74,10 @@
     <string name="exercise_rest">组间休息（秒）</string>
     <string name="exercise_reps">目标次数</string>
     <string name="exercise_presets">常用时长预设（锻炼 / 休息，秒）</string>
+    <string name="exercise_mode">动作类型</string>
+    <string name="exercise_mode_time">按时间</string>
+    <string name="exercise_mode_reps">按次数</string>
+    <string name="exercise_mode_reps_hint">次数型动作没有倒计时：做完后点击「完成本组」结算，耗时按实际记录</string>
 
     <!-- 组次记录 -->
     <string name="records_title">「%1$s」组次记录</string>

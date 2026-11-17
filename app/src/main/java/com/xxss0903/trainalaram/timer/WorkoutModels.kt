@@ -24,6 +24,13 @@ enum class ExerciseStatus { NOT_STARTED, IN_PROGRESS, SAVED }
 /** 整个训练会话的状态：未开始 / 进行中 / 已完成 */
 enum class SessionState { NOT_STARTED, IN_PROGRESS, COMPLETED }
 
+/**
+ * 动作的推进方式：
+ * - [TIME] 按时间：锻炼阶段有倒计时，时间到自动结算本组；
+ * - [REPS] 按次数：锻炼阶段无倒计时（秒表正向计时），做完由用户点击「完成本组」结算。
+ */
+enum class ExerciseMode { TIME, REPS }
+
 /** 数值边界，统一在此约束，避免各处散落魔数 */
 object WorkoutLimits {
     const val MIN_WORK_SEC = 1
@@ -57,8 +64,12 @@ data class Exercise(
     val targetSets: Int,
     val workSec: Int,
     val restSec: Int,
-    val targetReps: Int
+    val targetReps: Int,
+    val mode: ExerciseMode = ExerciseMode.TIME
 ) {
+    /** 次数型动作：无倒计时，做完由用户点击「完成本组」结算 */
+    val isRepsMode: Boolean get() = mode == ExerciseMode.REPS
+
     companion object {
         /** 构造一个各字段均已收敛到合法区间的动作 */
         fun create(
@@ -67,14 +78,16 @@ data class Exercise(
             targetSets: Int = WorkoutLimits.DEFAULT_SETS,
             workSec: Int = WorkoutLimits.DEFAULT_WORK_SEC,
             restSec: Int = WorkoutLimits.DEFAULT_REST_SEC,
-            targetReps: Int = WorkoutLimits.DEFAULT_REPS
+            targetReps: Int = WorkoutLimits.DEFAULT_REPS,
+            mode: ExerciseMode = ExerciseMode.TIME
         ): Exercise = Exercise(
             id = id,
             name = WorkoutLimits.clampName(name),
             targetSets = WorkoutLimits.clampSets(targetSets),
             workSec = WorkoutLimits.clampWork(workSec),
             restSec = WorkoutLimits.clampRest(restSec),
-            targetReps = WorkoutLimits.clampReps(targetReps)
+            targetReps = WorkoutLimits.clampReps(targetReps),
+            mode = mode
         )
     }
 }
@@ -115,6 +128,17 @@ data class ExerciseRun(
     val totalRestMs: Long get() = sets.sumOf { it.restAfterMs }
 }
 
+/**
+ * 暂停状态。暂停期间所有计时冻结、主流程锁定，必须继续后才能推进。
+ * [pauseOffsetMs] 为当前阶段内累计已暂停的时长，用于把「冻结的时间」从流逝时间里扣除。
+ */
+data class PauseState(
+    val paused: Boolean = false,
+    val pauseOffsetMs: Long = 0L,
+    /** 本次暂停的时刻（真实 elapsed）；未暂停时为 0 */
+    val pausedAtElapsedMs: Long = 0L
+)
+
 /** 可持久化的整会话快照 */
 data class SessionSnapshot(
     val plan: List<ExerciseRun>,
@@ -123,7 +147,8 @@ data class SessionSnapshot(
     val autoSave: Boolean,
     val phase: WorkoutPhase,
     val phaseStartElapsedMs: Long,
-    val phaseDurationMs: Long
+    val phaseDurationMs: Long,
+    val pause: PauseState = PauseState()
 )
 
 private const val STORAGE_VERSION = "v2"
@@ -144,6 +169,9 @@ fun SessionSnapshot.toStorage(): String {
     sb.append("phase=").append(phase.name).append('\n')
     sb.append("phase_start=").append(phaseStartElapsedMs).append('\n')
     sb.append("phase_duration=").append(phaseDurationMs).append('\n')
+    sb.append("paused=").append(if (pause.paused) 1 else 0).append('\n')
+    sb.append("pause_offset=").append(pause.pauseOffsetMs).append('\n')
+    sb.append("paused_at=").append(pause.pausedAtElapsedMs).append('\n')
     for (run in plan) {
         val e = run.exercise
         sb.append(TAG_EXERCISE)
@@ -154,7 +182,8 @@ fun SessionSnapshot.toStorage(): String {
             .append(e.restSec).append(LIST_SEPARATOR)
             .append(e.targetReps).append(LIST_SEPARATOR)
             .append(run.status.name).append(LIST_SEPARATOR)
-            .append(run.savedAtMs)
+            .append(run.savedAtMs).append(LIST_SEPARATOR)
+            .append(e.mode.name)
             .append('\n')
         for (s in run.sets) {
             sb.append(TAG_EXERCISE_SET)
@@ -208,6 +237,12 @@ fun sessionSnapshotFromStorage(raw: String?): SessionSnapshot? {
     }
     val rawCurrentId = fields["current_exercise"]?.toLongOrNull() ?: return null
     val currentExerciseId = if (rawCurrentId < 0L) null else rawCurrentId
+    // 暂停字段为后加内容，缺失时按「未暂停」处理
+    val pause = PauseState(
+        paused = fields["paused"] == "1",
+        pauseOffsetMs = fields["pause_offset"]?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
+        pausedAtElapsedMs = fields["paused_at"]?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+    )
 
     return SessionSnapshot(
         plan = plan,
@@ -216,7 +251,8 @@ fun sessionSnapshotFromStorage(raw: String?): SessionSnapshot? {
         autoSave = autoSave,
         phase = phase,
         phaseStartElapsedMs = phaseStart,
-        phaseDurationMs = phaseDuration
+        phaseDurationMs = phaseDuration,
+        pause = pause
     )
 }
 
@@ -225,7 +261,7 @@ private inline fun <reified T : Enum<T>> enumOrNull(value: String?): T? =
 
 private fun parseExerciseLine(payload: String): ExerciseRun? {
     val p = payload.split(LIST_SEPARATOR)
-    if (p.size != 8) return null
+    if (p.size < 8) return null
     val id = p[0].toLongOrNull() ?: return null
     val targetSets = p[2].toIntOrNull() ?: return null
     val workSec = p[3].toIntOrNull() ?: return null
@@ -233,8 +269,10 @@ private fun parseExerciseLine(payload: String): ExerciseRun? {
     val targetReps = p[5].toIntOrNull() ?: return null
     val status = enumOrNull<ExerciseStatus>(p[6]) ?: return null
     val savedAt = p[7].toLongOrNull() ?: return null
+    // mode 为后加字段，旧数据缺失时按「按时间」处理
+    val mode = if (p.size > 8) enumOrNull<ExerciseMode>(p[8]) ?: ExerciseMode.TIME else ExerciseMode.TIME
     return ExerciseRun(
-        exercise = Exercise.create(id, p[1], targetSets, workSec, restSec, targetReps),
+        exercise = Exercise.create(id, p[1], targetSets, workSec, restSec, targetReps, mode),
         status = status,
         savedAtMs = savedAt
     )

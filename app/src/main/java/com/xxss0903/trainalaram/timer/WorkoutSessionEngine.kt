@@ -48,8 +48,19 @@ class WorkoutSessionEngine(
     var phase: WorkoutPhase = WorkoutPhase.IDLE
         private set
 
+    /** 是否处于暂停中：计时冻结、主流程锁定 */
+    var paused: Boolean = false
+        private set
+
     private var phaseStartElapsedMs = 0L
     private var phaseDurationMs = 0L
+
+    /** 当前阶段内累计已暂停的时长，需要从流逝时间里扣除 */
+    private var pauseOffsetMs = 0L
+
+    /** 本次暂停的时刻；未暂停时为 0 */
+    private var pausedAtElapsedMs = 0L
+
     private var nextId = 1L
 
     // ------------------------------------------------------------------ 查询
@@ -96,19 +107,50 @@ class WorkoutSessionEngine(
         return (totalRecordedSets.toFloat() / target.toFloat()).coerceIn(0f, 1f)
     }
 
-    /** 当前阶段剩余毫秒；非倒计时阶段恒为 0 */
+    /** 当前阶段剩余毫秒；非倒计时阶段恒为 0（次数型动作的锻炼阶段也恒为 0） */
     fun remainingMs(): Long {
         if (phase != WorkoutPhase.WORK && phase != WorkoutPhase.REST) return 0L
-        return (phaseDurationMs - (clock() - phaseStartElapsedMs)).coerceAtLeast(0L)
+        return (phaseDurationMs - phaseElapsedMs()).coerceAtLeast(0L)
     }
+
+    /**
+     * 当前锻炼阶段的正向计时（次数型动作用），非锻炼阶段返回 0；暂停期间冻结不变。
+     */
+    fun workElapsedMs(): Long = if (phase == WorkoutPhase.WORK) phaseElapsedMs() else 0L
 
     /** 当前阶段进度 0f~1f，用于环形进度反馈 */
     fun phaseProgress(): Float {
         if (phase == WorkoutPhase.REST_DONE || phase == WorkoutPhase.SETS_DONE) return 1f
         if (phaseDurationMs <= 0L) return 0f
-        val elapsed = (clock() - phaseStartElapsedMs).coerceIn(0L, phaseDurationMs)
+        val elapsed = phaseElapsedMs().coerceIn(0L, phaseDurationMs)
         return elapsed.toFloat() / phaseDurationMs.toFloat()
     }
+
+    /** 仅在有计时推进的阶段才能进入暂停；已暂停时始终可以继续 */
+    val isPauseAvailable: Boolean
+        get() = paused || phase == WorkoutPhase.WORK || phase == WorkoutPhase.REST
+
+    /**
+     * 暂停 / 继续。
+     * 暂停时倒计时与秒表全部冻结、主流程锁定（[primaryAction] / [tick] / [finishCurrentExercise] 均不推进），
+     * 继续后从冻结的时刻接着走，暂停时长不计入锻炼 / 休息时长。
+     * @return 状态是否发生变化
+     */
+    fun setPaused(value: Boolean): Boolean {
+        if (value == paused) return false
+        if (value) {
+            if (!isPauseAvailable) return false
+            paused = true
+            pausedAtElapsedMs = clock()
+            return true
+        }
+        paused = false
+        pauseOffsetMs += (clock() - pausedAtElapsedMs).coerceAtLeast(0L)
+        pausedAtElapsedMs = 0L
+        return true
+    }
+
+    fun togglePause(): Boolean = setPaused(!paused)
 
     // -------------------------------------------------------------- 计划管理
 
@@ -120,9 +162,10 @@ class WorkoutSessionEngine(
         workSec: Int = WorkoutLimits.DEFAULT_WORK_SEC,
         restSec: Int = WorkoutLimits.DEFAULT_REST_SEC,
         targetSets: Int = WorkoutLimits.DEFAULT_SETS,
-        targetReps: Int = WorkoutLimits.DEFAULT_REPS
+        targetReps: Int = WorkoutLimits.DEFAULT_REPS,
+        mode: ExerciseMode = ExerciseMode.TIME
     ): Exercise {
-        val exercise = Exercise.create(nextId++, name, targetSets, workSec, restSec, targetReps)
+        val exercise = Exercise.create(nextId++, name, targetSets, workSec, restSec, targetReps, mode)
         _plan += ExerciseRun(exercise)
         when (sessionState) {
             // 已完成后又新增动作：允许继续训练，历史已保存记录原样保留
@@ -180,29 +223,35 @@ class WorkoutSessionEngine(
      * 主按钮的唯一入口，任何阶段都是一步操作：
      * IDLE→开始本动作第 1 组；WORK→完成本组并计数；REST→跳过休息并开始下一组；
      * REST_DONE→开始下一组；SETS_DONE→保存并进入下一动作。
+     * 暂停期间主流程锁定，任何点击都不产生推进。
      */
-    fun primaryAction(): EngineEvent = when (phase) {
-        WorkoutPhase.IDLE -> startCurrentSet()
-        WorkoutPhase.WORK -> completeCurrentSet(clock())
-        WorkoutPhase.REST -> {
-            finishRest(clock())
-            startCurrentSet()
-        }
-        WorkoutPhase.REST_DONE -> startCurrentSet()
-        WorkoutPhase.SETS_DONE -> {
-            val report = saveCurrentExercise()
-            EngineEvent(
-                phaseChanged = report.saved,
-                exerciseSaved = report.saved,
-                sessionCompleted = report.saved && sessionState == SessionState.COMPLETED
-            )
+    fun primaryAction(): EngineEvent {
+        if (paused) return EngineEvent.NONE
+        return when (phase) {
+            WorkoutPhase.IDLE -> startCurrentSet()
+            WorkoutPhase.WORK -> completeCurrentSet(clock())
+            WorkoutPhase.REST -> {
+                finishRest(clock())
+                startCurrentSet()
+            }
+            WorkoutPhase.REST_DONE -> startCurrentSet()
+            WorkoutPhase.SETS_DONE -> {
+                val report = saveCurrentExercise()
+                EngineEvent(
+                    phaseChanged = report.saved,
+                    exerciseSaved = report.saved,
+                    sessionCompleted = report.saved && sessionState == SessionState.COMPLETED
+                )
+            }
         }
     }
 
     /**
      * 由界面按固定间隔调用（回到前台时也应调用一次以追赶进度）。
+     * 暂停期间不做任何推进，保证冻结效果。
      */
     fun tick(): EngineEvent {
+        if (paused) return EngineEvent.NONE
         var phaseChanged = false
         var saved = false
         var completed = false
@@ -210,7 +259,7 @@ class WorkoutSessionEngine(
         while (steps++ < MAX_CATCH_UP_STEPS) {
             if (phase != WorkoutPhase.WORK && phase != WorkoutPhase.REST) break
             if (phaseDurationMs <= 0L) break
-            val endElapsed = phaseStartElapsedMs + phaseDurationMs
+            val endElapsed = phaseStartElapsedMs + pauseOffsetMs + phaseDurationMs
             if (clock() < endElapsed) break
             if (phase == WorkoutPhase.WORK) {
                 val event = completeCurrentSet(endElapsed)
@@ -228,8 +277,9 @@ class WorkoutSessionEngine(
         return EngineEvent(phaseChanged, saved, completed)
     }
 
-    /** 提前结束当前动作（不足目标组数也可），进入待保存状态 */
+    /** 提前结束当前动作（不足目标组数也可），进入待保存状态；暂停期间不可用 */
     fun finishCurrentExercise(): EngineEvent {
+        if (paused) return EngineEvent.NONE
         val run = currentRun ?: return EngineEvent.NONE
         if (run.status == ExerciseStatus.SAVED) return EngineEvent.NONE
 
@@ -286,9 +336,13 @@ class WorkoutSessionEngine(
             expected++
         }
         val maxDuration = run.exercise.workSec * 1000L
+        val repsMode = run.exercise.isRepsMode
         for (set in run.sets) {
             if (set.actualDurationMs < 0L) issues += "第 ${set.setIndex} 组锻炼时长为负"
-            if (set.actualDurationMs > maxDuration) issues += "第 ${set.setIndex} 组锻炼时长超出配置上限"
+            // 次数型动作按实际耗时记录，不受配置时长上限约束
+            if (!repsMode && set.actualDurationMs > maxDuration) {
+                issues += "第 ${set.setIndex} 组锻炼时长超出配置上限"
+            }
             if (set.restAfterMs < 0L) issues += "第 ${set.setIndex} 组休息时长为负"
             if (set.actualReps < 0) issues += "第 ${set.setIndex} 组完成次数为负"
         }
@@ -305,7 +359,7 @@ class WorkoutSessionEngine(
         val exercise = run.exercise
         val set = SetExecution(
             setIndex = run.recordedSets + 1,
-            actualDurationMs = durationMs.coerceIn(0L, exercise.workSec * 1000L),
+            actualDurationMs = clampSetDuration(exercise, durationMs),
             targetReps = exercise.targetReps,
             actualReps = WorkoutLimits.clampReps(actualReps),
             restAfterMs = 0L,
@@ -332,7 +386,7 @@ class WorkoutSessionEngine(
         val updated = run.sets.toMutableList().also {
             it[idx] = old.copy(
                 actualReps = WorkoutLimits.clampReps(actualReps),
-                actualDurationMs = durationMs.coerceIn(0L, run.exercise.workSec * 1000L),
+                actualDurationMs = clampSetDuration(run.exercise, durationMs),
                 completed = completed
             )
         }
@@ -353,6 +407,8 @@ class WorkoutSessionEngine(
         }
         sessionState = SessionState.NOT_STARTED
         phase = WorkoutPhase.IDLE
+        paused = false
+        resetPhasePause()
         phaseDurationMs = 0L
         phaseStartElapsedMs = clock()
         currentExerciseId = _plan.firstOrNull()?.exercise?.id
@@ -367,7 +423,8 @@ class WorkoutSessionEngine(
         autoSave = autoSave,
         phase = phase,
         phaseStartElapsedMs = phaseStartElapsedMs,
-        phaseDurationMs = phaseDurationMs
+        phaseDurationMs = phaseDurationMs,
+        pause = PauseState(paused, pauseOffsetMs, pausedAtElapsedMs)
     )
 
     /** 从快照恢复；数据非法或检测到设备重启时回退到安全状态而不是崩溃 */
@@ -381,19 +438,26 @@ class WorkoutSessionEngine(
         phase = snapshot.phase
         phaseStartElapsedMs = snapshot.phaseStartElapsedMs
         phaseDurationMs = snapshot.phaseDurationMs
+        paused = snapshot.pause.paused
+        pauseOffsetMs = snapshot.pause.pauseOffsetMs
+        pausedAtElapsedMs = snapshot.pause.pausedAtElapsedMs
 
         if (_plan.isEmpty()) {
             sessionState = SessionState.NOT_STARTED
             phase = WorkoutPhase.IDLE
             currentExerciseId = null
+            paused = false
+            resetPhasePause()
             phaseDurationMs = 0L
             phaseStartElapsedMs = clock()
             return
         }
 
-        // 设备重启后 elapsedRealtime 归零，旧起点会大于当前时刻；此时按已完成的组数回退
+        // 设备重启后 elapsedRealtime 归零，旧起点会大于当前时刻；此时按已完成的组数回退。
+        // 次数型动作的锻炼阶段本就没有倒计时（时长恒为 0），不属于非法状态。
+        val repsRunning = phase == WorkoutPhase.WORK && currentRun?.exercise?.isRepsMode == true
         val invalidRunning = (phase == WorkoutPhase.WORK || phase == WorkoutPhase.REST) &&
-            (phaseDurationMs <= 0L || phaseStartElapsedMs > clock())
+            (phaseStartElapsedMs > clock() || (phaseDurationMs <= 0L && !repsRunning))
         if (invalidRunning) {
             val run = currentRun
             phase = when {
@@ -402,6 +466,8 @@ class WorkoutSessionEngine(
                 run.recordedSets > 0 -> WorkoutPhase.REST_DONE
                 else -> WorkoutPhase.IDLE
             }
+            paused = false
+            resetPhasePause()
             phaseDurationMs = 0L
             phaseStartElapsedMs = clock()
         }
@@ -417,8 +483,10 @@ class WorkoutSessionEngine(
         if (sessionState == SessionState.COMPLETED) return EngineEvent.NONE
         replaceCurrentRun(run.copy(status = ExerciseStatus.IN_PROGRESS))
         phase = WorkoutPhase.WORK
+        resetPhasePause()
         phaseStartElapsedMs = startElapsedMs
-        phaseDurationMs = run.exercise.workSec * 1000L
+        // 次数型动作没有倒计时，由用户点击「完成本组」结算
+        phaseDurationMs = if (run.exercise.isRepsMode) 0L else run.exercise.workSec * 1000L
         return EngineEvent(phaseChanged = true)
     }
 
@@ -453,6 +521,7 @@ class WorkoutSessionEngine(
         }
         if (exercise.restSec > 0) {
             phase = WorkoutPhase.REST
+            resetPhasePause()
             phaseStartElapsedMs = endElapsedMs
             phaseDurationMs = exercise.restSec * 1000L
         } else {
@@ -471,12 +540,14 @@ class WorkoutSessionEngine(
 
     private fun enterRestDone(endElapsedMs: Long) {
         phase = WorkoutPhase.REST_DONE
+        resetPhasePause()
         phaseStartElapsedMs = endElapsedMs
         phaseDurationMs = 0L
     }
 
     private fun enterSetsDone(endElapsedMs: Long) {
         phase = WorkoutPhase.SETS_DONE
+        resetPhasePause()
         phaseStartElapsedMs = endElapsedMs
         phaseDurationMs = 0L
     }
@@ -485,6 +556,7 @@ class WorkoutSessionEngine(
     private fun advanceToNextExercise() {
         val next = currentIndex + 1
         phaseDurationMs = 0L
+        resetPhasePause()
         phaseStartElapsedMs = clock()
         if (next >= _plan.size) {
             sessionState = SessionState.COMPLETED
@@ -508,8 +580,29 @@ class WorkoutSessionEngine(
     }
 
     private fun clampElapsed(endElapsedMs: Long): Long {
-        val elapsed = endElapsedMs - phaseStartElapsedMs
+        val elapsed = endElapsedMs - phaseStartElapsedMs - pauseOffsetMs
+        // 次数型动作的锻炼阶段没有配置时长，按实际耗时记录
         return if (phaseDurationMs > 0L) elapsed.coerceIn(0L, phaseDurationMs) else elapsed.coerceAtLeast(0L)
+    }
+
+    /** 补录 / 修改组次时的时长收敛：次数型动作不受配置时长上限约束 */
+    private fun clampSetDuration(exercise: Exercise, durationMs: Long): Long =
+        if (exercise.isRepsMode) durationMs.coerceAtLeast(0L)
+        else durationMs.coerceIn(0L, exercise.workSec * 1000L)
+
+    /**
+     * 当前阶段已进行的有效时长（真实流逝时间扣除暂停时长）。
+     * 暂停期间取暂停时刻，因此数值被冻结且不会随时间增长。
+     */
+    private fun phaseElapsedMs(): Long {
+        val end = if (paused) pausedAtElapsedMs else clock()
+        return (end - phaseStartElapsedMs - pauseOffsetMs).coerceAtLeast(0L)
+    }
+
+    /** 阶段切换时清零暂停累计，使暂停时长只影响其所在的阶段 */
+    private fun resetPhasePause() {
+        pauseOffsetMs = 0L
+        pausedAtElapsedMs = 0L
     }
 
     private companion object {

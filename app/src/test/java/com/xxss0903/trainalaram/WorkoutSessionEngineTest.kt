@@ -1,6 +1,7 @@
 package com.xxss0903.trainalaram
 
 import com.xxss0903.trainalaram.timer.Exercise
+import com.xxss0903.trainalaram.timer.ExerciseMode
 import com.xxss0903.trainalaram.timer.ExerciseRun
 import com.xxss0903.trainalaram.timer.ExerciseStatus
 import com.xxss0903.trainalaram.timer.SessionSnapshot
@@ -578,5 +579,191 @@ class WorkoutSessionEngineTest {
         assertEquals(WorkoutPhase.IDLE, engine.phase)
         assertEquals("深蹲", engine.currentExercise?.name)
         assertTrue(engine.plan.all { it.status == ExerciseStatus.NOT_STARTED })
+    }
+
+    // ---------------------------------------------------------------- 暂停功能
+
+    @Test
+    fun pauseOnlyAvailableWhileTiming() {
+        val clock = FakeClock()
+        val engine = engineWith(clock, "深蹲")
+
+        assertEquals(WorkoutPhase.IDLE, engine.phase)
+        assertFalse(engine.setPaused(true))
+        assertFalse(engine.paused)
+
+        engine.primaryAction()
+        assertTrue(engine.isPauseAvailable)
+        assertTrue(engine.setPaused(true))
+        assertTrue(engine.paused)
+        // 已暂停时始终可以继续，即使阶段判定不满足
+        assertTrue(engine.setPaused(false))
+        assertFalse(engine.paused)
+    }
+
+    @Test
+    fun pauseFreezesWorkCountdownAndLocksMainFlow() {
+        val clock = FakeClock()
+        val engine = engineWith(clock, "深蹲")
+        engine.primaryAction()
+
+        clock.advance(10_000L)
+        assertEquals(20_000L, engine.remainingMs())
+
+        assertTrue(engine.setPaused(true))
+
+        // 暂停期间真实时间继续流逝，但剩余时间与进度被冻结
+        clock.advance(60_000L)
+        assertEquals(20_000L, engine.remainingMs())
+        assertEquals(10_000f / 30_000f, engine.phaseProgress(), 0.0001f)
+
+        // 主流程被锁定：tick 与主按钮都不产生任何推进
+        assertFalse(engine.tick().any)
+        assertFalse(engine.primaryAction().any)
+        assertEquals(WorkoutPhase.WORK, engine.phase)
+        assertEquals(0, engine.recordedSets)
+
+        // 继续后从冻结处接着走，暂停时长不计入锻炼时长
+        assertTrue(engine.setPaused(false))
+        clock.advance(5_000L)
+        assertEquals(15_000L, engine.remainingMs())
+
+        clock.advance(15_000L)
+        assertTrue(engine.tick().phaseChanged)
+        assertEquals(30_000L, engine.currentRun!!.sets.single().actualDurationMs)
+    }
+
+    @Test
+    fun pauseFreezesRestCountdownAndIsClearedForNextPhase() {
+        val clock = FakeClock()
+        val engine = engineWith(clock, "深蹲")
+        engine.primaryAction()
+        clock.advance(30_000L)
+        engine.tick()
+        assertEquals(WorkoutPhase.REST, engine.phase)
+
+        clock.advance(5_000L)
+        assertTrue(engine.setPaused(true))
+        clock.advance(30_000L)
+        assertEquals(10_000L, engine.remainingMs())
+
+        assertTrue(engine.setPaused(false))
+        // 跳过休息：实际休息时长只计暂停之外的 5 秒
+        engine.primaryAction()
+        assertEquals(WorkoutPhase.WORK, engine.phase)
+        assertEquals(5_000L, engine.currentRun!!.sets[0].restAfterMs)
+        // 暂停累计不跨阶段：下一组仍是完整的锻炼时长
+        assertEquals(30_000L, engine.remainingMs())
+    }
+
+    @Test
+    fun pauseBlocksEarlyFinishAndSurvivesSnapshotRoundTrip() {
+        val clock = FakeClock()
+        val engine = engineWith(clock, "深蹲")
+        engine.primaryAction()
+        clock.advance(8_000L)
+        engine.setPaused(true)
+
+        // 暂停期间「结束本动作」同样被锁定
+        assertFalse(engine.finishCurrentExercise().any)
+
+        val parsed = sessionSnapshotFromStorage(engine.snapshot().toStorage())!!
+        val restored = newEngine(clock)
+        restored.restore(parsed)
+
+        assertTrue(restored.paused)
+        assertEquals(WorkoutPhase.WORK, restored.phase)
+        assertEquals(22_000L, restored.remainingMs())
+
+        // 进程被杀后重新恢复：仍保持暂停，计时不因离开而流失
+        clock.advance(120_000L)
+        assertEquals(22_000L, restored.remainingMs())
+        assertFalse(restored.tick().any)
+
+        assertTrue(restored.setPaused(false))
+        clock.advance(2_000L)
+        assertEquals(20_000L, restored.remainingMs())
+    }
+
+    // ------------------------------------------------------------ 次数型动作
+
+    @Test
+    fun repsModeHasNoCountdownAndUsesManualCompletion() {
+        val clock = FakeClock()
+        val engine = newEngine(clock).apply { addExercise("俯卧撑", 30, 15, 3, 20, ExerciseMode.REPS) }
+
+        engine.primaryAction()
+        assertEquals(WorkoutPhase.WORK, engine.phase)
+        assertTrue(engine.currentExercise!!.isRepsMode)
+        // 无倒计时：剩余时间恒为 0，秒表从 0 开始正向累计
+        assertEquals(0L, engine.remainingMs())
+        assertEquals(0L, engine.workElapsedMs())
+
+        clock.advance(75_000L)
+        // 时间再长也不会自动结算
+        assertFalse(engine.tick().any)
+        assertEquals(WorkoutPhase.WORK, engine.phase)
+        assertEquals(75_000L, engine.workElapsedMs())
+        assertEquals(0, engine.recordedSets)
+
+        // 手动点击「完成本组」结算，时长可超过配置的锻炼时长而不被判为异常
+        assertTrue(engine.primaryAction().phaseChanged)
+        val set = engine.currentRun!!.sets.single()
+        assertEquals(20, set.actualReps)
+        assertEquals(75_000L, set.actualDurationMs)
+        assertEquals(WorkoutPhase.REST, engine.phase)
+        assertTrue(engine.validateForSave(engine.currentRun!!).isEmpty())
+    }
+
+    @Test
+    fun repsModePauseFreezesStopwatch() {
+        val clock = FakeClock()
+        val engine = newEngine(clock).apply { addExercise("深蹲", 30, 15, 3, 20, ExerciseMode.REPS) }
+        engine.primaryAction()
+        clock.advance(12_000L)
+        assertEquals(12_000L, engine.workElapsedMs())
+
+        engine.setPaused(true)
+        clock.advance(45_000L)
+        assertEquals(12_000L, engine.workElapsedMs())
+
+        engine.setPaused(false)
+        clock.advance(3_000L)
+        assertEquals(15_000L, engine.workElapsedMs())
+
+        engine.primaryAction()
+        assertEquals(15_000L, engine.currentRun!!.sets.single().actualDurationMs)
+    }
+
+    @Test
+    fun repsModeAndPauseSurviveSnapshotRoundTrip() {
+        val clock = FakeClock()
+        val engine = newEngine(clock).apply { addExercise("深蹲", 30, 15, 3, 20, ExerciseMode.REPS) }
+        engine.primaryAction()
+        clock.advance(20_000L)
+
+        val parsed = sessionSnapshotFromStorage(engine.snapshot().toStorage())!!
+        assertEquals(ExerciseMode.REPS, parsed.plan[0].exercise.mode)
+
+        // 次数型动作在锻炼阶段本就无倒计时，恢复时不应被当作非法状态回退
+        val restored = newEngine(clock)
+        restored.restore(parsed)
+
+        assertTrue(restored.currentExercise!!.isRepsMode)
+        assertEquals(WorkoutPhase.WORK, restored.phase)
+        assertEquals(20_000L, restored.workElapsedMs())
+    }
+
+    @Test
+    fun legacyExerciseLineWithoutModeDefaultsToTime() {
+        val raw = "v2\nauto_save=0\nsession_state=IN_PROGRESS\ncurrent_exercise=1\n" +
+            "phase=IDLE\nphase_start=0\nphase_duration=0\n" +
+            "ex=1|深蹲|3|30|15|12|IN_PROGRESS|0"
+
+        val parsed = sessionSnapshotFromStorage(raw)!!
+
+        assertEquals(ExerciseMode.TIME, parsed.plan[0].exercise.mode)
+        assertFalse(parsed.pause.paused)
+        assertEquals(0L, parsed.pause.pauseOffsetMs)
     }
 }
