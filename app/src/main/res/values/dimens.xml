@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <dimen name="screen_padding">20dp</dimen>
-    <dimen name="ring_size">220dp</dimen>
+    <dimen name="ring_size">200dp</dimen>
     <dimen name="ring_stroke">14dp</dimen>
     <dimen name="main_button_height">64dp</dimen>
     <dimen name="top_action_padding">10dp</dimen>
+    <dimen name="dialog_list_max_height">320dp</dimen>
 </resources>

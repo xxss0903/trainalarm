@@ -7,35 +7,103 @@
     <string name="phase_work">锻炼中</string>
     <string name="phase_rest">休息中</string>
     <string name="phase_rest_done">休息结束 · 可开始下一组</string>
+    <string name="phase_sets_done">本动作已完成 · 待保存</string>
 
     <!-- 主按钮（各阶段均为一步操作） -->
     <string name="action_start">开始训练</string>
+    <string name="action_start_set">开始第 %1$d 组</string>
     <string name="action_finish_set">完成本组</string>
-    <string name="action_skip_rest">跳过休息</string>
-    <string name="action_start_next">开始第 %1$d 组</string>
+    <string name="action_skip_rest">跳过休息 · 下一组</string>
+    <string name="action_save_next">保存并进入下一动作</string>
+    <string name="action_save_finish">保存并完成训练</string>
+    <string name="action_all_done">训练已全部完成</string>
+    <string name="action_add_exercise">请先添加训练动作</string>
+    <string name="default_exercise_name">动作 %1$d</string>
 
     <!-- 顶部操作 -->
+    <string name="action_plan">计划</string>
     <string name="action_settings">设置</string>
     <string name="action_reset">重置</string>
-    <string name="settings_title">时长设置</string>
-    <string name="settings_presets">常用预设（锻炼 / 休息，秒）</string>
-    <string name="settings_work">锻炼时长（秒）</string>
-    <string name="settings_rest">休息时长（秒）</string>
-    <string name="save">保存</string>
-    <string name="cancel">取消</string>
-    <string name="settings_invalid">请输入 1~3600 之间的整数</string>
+    <string name="action_records">组次记录</string>
 
-    <!-- 组次与统计 -->
-    <string name="set_info_current">第 %1$d 组</string>
-    <string name="set_info_next">第 %1$d 组 待开始</string>
-    <string name="stats_summary">已完成 %1$d 组 · 锻炼 %2$s · 休息 %3$s</string>
+    <!-- 动作与会话状态 -->
+    <string name="exercise_header">动作 %1$d/%2$d · %3$s</string>
+    <string name="session_state_not_started">未开始</string>
+    <string name="session_state_in_progress">进行中</string>
+    <string name="session_state_completed">已完成</string>
+    <string name="exercise_status_not_started">未开始</string>
+    <string name="exercise_status_in_progress">进行中</string>
+    <string name="exercise_status_saved">已保存</string>
+    <string name="exercise_status_completed">已完成</string>
+
+    <!-- 进度与统计 -->
+    <string name="overall_progress">整体进度 %1$d/%2$d 组</string>
+    <string name="set_info_current">第 %1$d/%2$d 组 · 目标 %3$d 次</string>
+    <string name="set_info_next">第 %1$d/%2$d 组 待开始 · 目标 %3$d 次</string>
+    <string name="stats_current">本动作 已完成 %1$d 组 · 锻炼 %2$s · 休息 %3$s</string>
     <string name="last_record">上组 %1$s · 组间休息 %2$s</string>
     <string name="no_record">尚无记录</string>
-    <string name="rest_done_hint">休息结束，请开始下一组</string>
 
-    <!-- 恢复与重置 -->
+    <!-- 训练计划 -->
+    <string name="plan_title">训练计划</string>
+    <string name="plan_empty">暂无动作，请点击下方按钮添加</string>
+    <string name="plan_locked">训练进行中不可增删或排序动作，可编辑当前动作参数</string>
+    <string name="plan_add">新增动作</string>
+    <string name="plan_move_up">上移</string>
+    <string name="plan_move_down">下移</string>
+    <string name="plan_edit">编辑</string>
+    <string name="plan_delete">删除</string>
+    <string name="plan_item_detail">%1$d 组 × %2$d 次 · %3$d/%4$d 秒</string>
+    <string name="plan_delete_title">删除动作</string>
+    <string name="plan_delete_message">确定要删除「%1$s」吗？</string>
+    <string name="plan_locked_action">训练进行中，暂不可增删或排序</string>
+
+    <!-- 动作编辑 -->
+    <string name="exercise_add_title">新增动作</string>
+    <string name="exercise_edit_title">编辑动作</string>
+    <string name="exercise_name">动作名称</string>
+    <string name="exercise_sets">组数</string>
+    <string name="exercise_work">每组时长（秒）</string>
+    <string name="exercise_rest">组间休息（秒）</string>
+    <string name="exercise_reps">目标次数</string>
+    <string name="exercise_presets">常用时长预设（锻炼 / 休息，秒）</string>
+
+    <!-- 组次记录 -->
+    <string name="records_title">「%1$s」组次记录</string>
+    <string name="records_empty">尚无组次记录</string>
+    <string name="records_item_title">第 %1$d 组</string>
+    <string name="records_item_detail">%1$s · %2$d/%3$d 次 · 组间休息 %4$s</string>
+    <string name="records_item_pending">未完成</string>
+    <string name="records_add">补录一组</string>
+    <string name="records_finish">结束本动作</string>
+    <string name="records_readonly">该动作数据已保存，仅可查看回溯</string>
+
+    <!-- 组次编辑 -->
+    <string name="set_edit_add_title">补录第 %1$d 组</string>
+    <string name="set_edit_title">修改第 %1$d 组</string>
+    <string name="set_edit_reps">完成次数</string>
+    <string name="set_edit_duration">锻炼时长（秒）</string>
+    <string name="set_edit_completed">标记为已完成</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">训练设置</string>
+    <string name="settings_autosave">动作完成后自动保存</string>
+    <string name="settings_autosave_hint">关闭后需在每个动作完成后手动确认保存</string>
+
+    <!-- 通用 -->
+    <string name="save">保存</string>
+    <string name="cancel">取消</string>
+    <string name="confirm">确定</string>
+    <string name="close">关闭</string>
+    <string name="invalid_input">请输入合法数值：组数 1~99、时长 1~3600 秒、休息 0~3600 秒、次数 0~999</string>
+    <string name="no_exercise_hint">请先在「计划」中添加训练动作</string>
+    <string name="saved_toast">「%1$s」数据已保存</string>
+    <string name="session_completed_toast">全部动作已完成，训练结束</string>
+    <string name="save_failed_toast">保存校验未通过：%1$s</string>
     <string name="restored_hint">已恢复上次训练进度</string>
+
+    <!-- 重置 -->
     <string name="reset_title">重置本次训练</string>
-    <string name="reset_message">将清空当前组次与所有计时记录，是否继续？</string>
+    <string name="reset_message">将清空所有动作的组次记录与流程状态，是否继续？</string>
     <string name="reset_confirm">重置</string>
 </resources>

@@ -1,8 +1,8 @@
 package com.xxss0903.trainalaram.timer
 
-/** 训练阶段 */
+/** 当前动作内的即时阶段 */
 enum class WorkoutPhase {
-    /** 未开始 */
+    /** 未开始（等待开始本动作的第 1 组） */
     IDLE,
 
     /** 锻炼倒计时中 */
@@ -12,106 +12,247 @@ enum class WorkoutPhase {
     REST,
 
     /** 休息已结束，等待用户开始下一组 */
-    REST_DONE
+    REST_DONE,
+
+    /** 本动作全部组已记录完成，等待保存 */
+    SETS_DONE
 }
 
-/**
- * 一条计时记录：一组锻炼或一段休息的**实际**时长。
- *
- * @param phase     记录类型（WORK / REST）
- * @param setIndex  所属组号，从 1 开始
- * @param durationMs 实际持续时长（毫秒）
- * @param endedAtMs 结束时刻的墙上时间（毫秒），仅用于展示与追溯
- */
-data class SetRecord(
-    val phase: WorkoutPhase,
+/** 单个动作在会话中的状态：未开始 / 进行中 / 已保存 */
+enum class ExerciseStatus { NOT_STARTED, IN_PROGRESS, SAVED }
+
+/** 整个训练会话的状态：未开始 / 进行中 / 已完成 */
+enum class SessionState { NOT_STARTED, IN_PROGRESS, COMPLETED }
+
+/** 数值边界，统一在此约束，避免各处散落魔数 */
+object WorkoutLimits {
+    const val MIN_WORK_SEC = 1
+    const val MIN_REST_SEC = 0
+    const val MAX_SEC = 3600
+    const val MIN_SETS = 1
+    const val MAX_SETS = 99
+    const val MIN_REPS = 0
+    const val MAX_REPS = 999
+    const val MAX_NAME_LEN = 24
+
+    const val DEFAULT_WORK_SEC = 30
+    const val DEFAULT_REST_SEC = 15
+    const val DEFAULT_SETS = 3
+    const val DEFAULT_REPS = 12
+
+    fun clampWork(sec: Int): Int = sec.coerceIn(MIN_WORK_SEC, MAX_SEC)
+    fun clampRest(sec: Int): Int = sec.coerceIn(MIN_REST_SEC, MAX_SEC)
+    fun clampSets(count: Int): Int = count.coerceIn(MIN_SETS, MAX_SETS)
+    fun clampReps(count: Int): Int = count.coerceIn(MIN_REPS, MAX_REPS)
+
+    /** 名称清洗：去掉会破坏持久化格式的字符，并限制长度 */
+    fun clampName(name: String): String =
+        name.trim().replace('|', '/').replace('\n', ' ').replace('\r', ' ').take(MAX_NAME_LEN).ifBlank { "未命名动作" }
+}
+
+/** 动作定义（可编辑的训练计划项） */
+data class Exercise(
+    val id: Long,
+    val name: String,
+    val targetSets: Int,
+    val workSec: Int,
+    val restSec: Int,
+    val targetReps: Int
+) {
+    companion object {
+        /** 构造一个各字段均已收敛到合法区间的动作 */
+        fun create(
+            id: Long,
+            name: String,
+            targetSets: Int = WorkoutLimits.DEFAULT_SETS,
+            workSec: Int = WorkoutLimits.DEFAULT_WORK_SEC,
+            restSec: Int = WorkoutLimits.DEFAULT_REST_SEC,
+            targetReps: Int = WorkoutLimits.DEFAULT_REPS
+        ): Exercise = Exercise(
+            id = id,
+            name = WorkoutLimits.clampName(name),
+            targetSets = WorkoutLimits.clampSets(targetSets),
+            workSec = WorkoutLimits.clampWork(workSec),
+            restSec = WorkoutLimits.clampRest(restSec),
+            targetReps = WorkoutLimits.clampReps(targetReps)
+        )
+    }
+}
+
+/** 一组已记录的执行数据 */
+data class SetExecution(
+    /** 组号，从 1 开始 */
     val setIndex: Int,
-    val durationMs: Long,
+    /** 本组实际锻炼时长（毫秒） */
+    val actualDurationMs: Long,
+    /** 本组目标次数 */
+    val targetReps: Int,
+    /** 本组实际完成次数（可补录 / 修改） */
+    val actualReps: Int,
+    /** 本组之后的组间休息时长（毫秒） */
+    val restAfterMs: Long,
+    /** 是否按计划完整完成（false 表示提前结束或补录时标记为未完成） */
+    val completed: Boolean,
+    /** 结束时刻的墙上时间（毫秒），用于展示与回溯 */
     val endedAtMs: Long
 )
 
-/** 可持久化的训练状态快照 */
-data class WorkoutSnapshot(
+/** 动作在会话中的运行实例 */
+data class ExerciseRun(
+    val exercise: Exercise,
+    val status: ExerciseStatus = ExerciseStatus.NOT_STARTED,
+    val sets: List<SetExecution> = emptyList(),
+    /** 保存时刻的墙上时间，未保存为 0 */
+    val savedAtMs: Long = 0L
+) {
+    /** 已记录组数 */
+    val recordedSets: Int get() = sets.size
+
+    /** 已按计划完整完成的组数 */
+    val completedSets: Int get() = sets.count { it.completed }
+
+    val totalWorkMs: Long get() = sets.sumOf { it.actualDurationMs }
+    val totalRestMs: Long get() = sets.sumOf { it.restAfterMs }
+}
+
+/** 可持久化的整会话快照 */
+data class SessionSnapshot(
+    val plan: List<ExerciseRun>,
+    val currentExerciseId: Long?,
+    val sessionState: SessionState,
+    val autoSave: Boolean,
     val phase: WorkoutPhase,
-    val currentSet: Int,
-    val completedSets: Int,
     val phaseStartElapsedMs: Long,
-    val phaseDurationMs: Long,
-    val workDurationSec: Int,
-    val restDurationSec: Int,
-    val records: List<SetRecord>
+    val phaseDurationMs: Long
 )
 
-private const val STORAGE_VERSION = "v1"
-private const val RECORD_SEPARATOR = ';'
-private const val FIELD_SEPARATOR = ','
+private const val STORAGE_VERSION = "v2"
+private const val LIST_SEPARATOR = '|'
+private const val TAG_EXERCISE = "ex="
+private const val TAG_EXERCISE_SET = "exset="
 
-/** 序列化为单行文本，便于写入 SharedPreferences；格式纯 Kotlin 实现，可在 JVM 单测中校验 */
-fun WorkoutSnapshot.toStorage(): String {
-    val sb = StringBuilder(256)
+/**
+ * 序列化为逐行文本，便于写入 SharedPreferences。
+ * 纯 Kotlin 实现（不依赖 Android），可在 JVM 单测中直接校验往返一致性。
+ */
+fun SessionSnapshot.toStorage(): String {
+    val sb = StringBuilder(512)
     sb.append(STORAGE_VERSION).append('\n')
+    sb.append("auto_save=").append(if (autoSave) 1 else 0).append('\n')
+    sb.append("session_state=").append(sessionState.name).append('\n')
+    sb.append("current_exercise=").append(currentExerciseId ?: -1L).append('\n')
     sb.append("phase=").append(phase.name).append('\n')
-    sb.append("current_set=").append(currentSet).append('\n')
-    sb.append("completed_sets=").append(completedSets).append('\n')
     sb.append("phase_start=").append(phaseStartElapsedMs).append('\n')
     sb.append("phase_duration=").append(phaseDurationMs).append('\n')
-    sb.append("work_sec=").append(workDurationSec).append('\n')
-    sb.append("rest_sec=").append(restDurationSec).append('\n')
-    sb.append("records=")
-    sb.append(
-        records.joinToString(RECORD_SEPARATOR.toString()) {
-            "${it.phase.name}$FIELD_SEPARATOR${it.setIndex}$FIELD_SEPARATOR${it.durationMs}$FIELD_SEPARATOR${it.endedAtMs}"
+    for (run in plan) {
+        val e = run.exercise
+        sb.append(TAG_EXERCISE)
+            .append(e.id).append(LIST_SEPARATOR)
+            .append(WorkoutLimits.clampName(e.name)).append(LIST_SEPARATOR)
+            .append(e.targetSets).append(LIST_SEPARATOR)
+            .append(e.workSec).append(LIST_SEPARATOR)
+            .append(e.restSec).append(LIST_SEPARATOR)
+            .append(e.targetReps).append(LIST_SEPARATOR)
+            .append(run.status.name).append(LIST_SEPARATOR)
+            .append(run.savedAtMs)
+            .append('\n')
+        for (s in run.sets) {
+            sb.append(TAG_EXERCISE_SET)
+                .append(s.setIndex).append(LIST_SEPARATOR)
+                .append(s.actualDurationMs).append(LIST_SEPARATOR)
+                .append(s.targetReps).append(LIST_SEPARATOR)
+                .append(s.actualReps).append(LIST_SEPARATOR)
+                .append(s.restAfterMs).append(LIST_SEPARATOR)
+                .append(if (s.completed) 1 else 0).append(LIST_SEPARATOR)
+                .append(s.endedAtMs)
+                .append('\n')
         }
-    )
+    }
     return sb.toString()
 }
 
 /**
- * 解析持久化文本。任何字段缺失或格式非法都返回 null，
- * 由调用方回退到全新状态，避免脏数据导致崩溃（异常状态恢复）。
+ * 解析持久化文本。
+ * 顶层字段缺失 / 版本不符 → 返回 null，由调用方回退到全新状态；
+ * 单条动作或组次记录格式非法 → 跳过该条目而不是整体失败（异常恢复）。
  */
-fun snapshotFromStorage(raw: String?): WorkoutSnapshot? {
+fun sessionSnapshotFromStorage(raw: String?): SessionSnapshot? {
     if (raw.isNullOrBlank()) return null
-    val lines = raw.split('\n').filter { it.isNotBlank() }
-    if (lines.size < 2 || lines[0].trim() != STORAGE_VERSION) return null
+    val lines = raw.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+    if (lines.isEmpty() || lines[0] != STORAGE_VERSION) return null
 
     val fields = HashMap<String, String>()
-    for (i in 1 until lines.size) {
-        val idx = lines[i].indexOf('=')
-        if (idx <= 0) continue
-        fields[lines[i].substring(0, idx).trim()] = lines[i].substring(idx + 1).trim()
-    }
-
-    val phase = runCatching { WorkoutPhase.valueOf(fields["phase"].orEmpty()) }.getOrNull() ?: return null
-    val currentSet = fields["current_set"]?.toIntOrNull() ?: return null
-    val completedSets = fields["completed_sets"]?.toIntOrNull() ?: return null
-    val phaseStart = fields["phase_start"]?.toLongOrNull() ?: return null
-    val phaseDuration = fields["phase_duration"]?.toLongOrNull() ?: return null
-    val workSec = fields["work_sec"]?.toIntOrNull() ?: return null
-    val restSec = fields["rest_sec"]?.toIntOrNull() ?: return null
-
-    val records = ArrayList<SetRecord>()
-    val rawRecords = fields["records"].orEmpty()
-    if (rawRecords.isNotBlank()) {
-        for (item in rawRecords.split(RECORD_SEPARATOR)) {
-            val parts = item.split(FIELD_SEPARATOR)
-            if (parts.size != 4) continue
-            val recordPhase = runCatching { WorkoutPhase.valueOf(parts[0]) }.getOrNull() ?: continue
-            val setIndex = parts[1].toIntOrNull() ?: continue
-            val duration = parts[2].toLongOrNull() ?: continue
-            val endedAt = parts[3].toLongOrNull() ?: continue
-            records += SetRecord(recordPhase, setIndex, duration, endedAt)
+    val plan = ArrayList<ExerciseRun>()
+    for (line in lines.drop(1)) {
+        if (line.startsWith(TAG_EXERCISE)) {
+            parseExerciseLine(line.removePrefix(TAG_EXERCISE))?.let { plan += it }
+        } else if (line.startsWith(TAG_EXERCISE_SET)) {
+            val run = plan.lastOrNull() ?: continue
+            parseSetLine(line.removePrefix(TAG_EXERCISE_SET))?.let { set ->
+                plan[plan.lastIndex] = run.copy(sets = run.sets + set)
+            }
+        } else {
+            val idx = line.indexOf('=')
+            if (idx > 0) fields[line.substring(0, idx)] = line.substring(idx + 1)
         }
     }
 
-    return WorkoutSnapshot(
+    val sessionState = enumOrNull<SessionState>(fields["session_state"]) ?: return null
+    val phase = enumOrNull<WorkoutPhase>(fields["phase"]) ?: return null
+    val phaseStart = fields["phase_start"]?.toLongOrNull() ?: return null
+    val phaseDuration = fields["phase_duration"]?.toLongOrNull() ?: return null
+    val autoSave = when (fields["auto_save"]) {
+        "1" -> true
+        "0" -> false
+        else -> return null
+    }
+    val rawCurrentId = fields["current_exercise"]?.toLongOrNull() ?: return null
+    val currentExerciseId = if (rawCurrentId < 0L) null else rawCurrentId
+
+    return SessionSnapshot(
+        plan = plan,
+        currentExerciseId = currentExerciseId,
+        sessionState = sessionState,
+        autoSave = autoSave,
         phase = phase,
-        currentSet = currentSet,
-        completedSets = completedSets,
         phaseStartElapsedMs = phaseStart,
-        phaseDurationMs = phaseDuration,
-        workDurationSec = workSec,
-        restDurationSec = restSec,
-        records = records
+        phaseDurationMs = phaseDuration
     )
+}
+
+private inline fun <reified T : Enum<T>> enumOrNull(value: String?): T? =
+    if (value.isNullOrBlank()) null else runCatching { enumValueOf<T>(value) }.getOrNull()
+
+private fun parseExerciseLine(payload: String): ExerciseRun? {
+    val p = payload.split(LIST_SEPARATOR)
+    if (p.size != 8) return null
+    val id = p[0].toLongOrNull() ?: return null
+    val targetSets = p[2].toIntOrNull() ?: return null
+    val workSec = p[3].toIntOrNull() ?: return null
+    val restSec = p[4].toIntOrNull() ?: return null
+    val targetReps = p[5].toIntOrNull() ?: return null
+    val status = enumOrNull<ExerciseStatus>(p[6]) ?: return null
+    val savedAt = p[7].toLongOrNull() ?: return null
+    return ExerciseRun(
+        exercise = Exercise.create(id, p[1], targetSets, workSec, restSec, targetReps),
+        status = status,
+        savedAtMs = savedAt
+    )
+}
+
+private fun parseSetLine(payload: String): SetExecution? {
+    val p = payload.split(LIST_SEPARATOR)
+    if (p.size != 7) return null
+    val setIndex = p[0].toIntOrNull() ?: return null
+    val duration = p[1].toLongOrNull() ?: return null
+    val targetReps = p[2].toIntOrNull() ?: return null
+    val actualReps = p[3].toIntOrNull() ?: return null
+    val restAfter = p[4].toLongOrNull() ?: return null
+    val completed = when (p[5]) {
+        "1" -> true
+        "0" -> false
+        else -> return null
+    }
+    val endedAt = p[6].toLongOrNull() ?: return null
+    return SetExecution(setIndex, duration, targetReps, actualReps, restAfter, completed, endedAt)
 }

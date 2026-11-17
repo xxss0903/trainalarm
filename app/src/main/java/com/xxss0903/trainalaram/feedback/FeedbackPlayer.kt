@@ -33,6 +33,24 @@ class FeedbackPlayer(context: Context) {
         vibrate(longArrayOf(0L, 60L))
     }
 
+    /** 单个动作数据保存成功 */
+    fun onExerciseSaved() {
+        beep(ToneGenerator.TONE_PROP_ACK, 260)
+        vibrate(longArrayOf(0L, 80L, 70L, 80L))
+    }
+
+    /** 整个训练会话完成 */
+    fun onSessionCompleted() {
+        beep(ToneGenerator.TONE_PROP_BEEP2, 500)
+        vibrate(longArrayOf(0L, 200L, 120L, 200L, 120L, 300L))
+    }
+
+    /** 保存校验未通过等异常提示 */
+    fun onWarning() {
+        beep(ToneGenerator.TONE_PROP_NACK, 400)
+        vibrate(longArrayOf(0L, 300L))
+    }
+
     /** 阶段结束前 3 秒的提示音 */
     fun onCountdownTick() {
         beep(ToneGenerator.TONE_PROP_BEEP, 90)

@@ -10,46 +10,131 @@
     android:paddingEnd="@dimen/screen_padding"
     tools:context=".MainActivity">
 
-    <!-- 顶部：重置 / 设置，均为一次点击可达 -->
-    <TextView
-        android:id="@+id/btn_reset"
-        android:layout_width="wrap_content"
+    <!-- 顶部：计划 / 设置 / 重置，均为一次点击可达 -->
+    <LinearLayout
+        android:id="@+id/top_bar"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/top_action_padding"
-        android:background="?attr/selectableItemBackground"
-        android:padding="8dp"
-        android:text="@string/action_reset"
-        android:textColor="@color/text_secondary"
-        android:textSize="14sp"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
-    <TextView
-        android:id="@+id/btn_settings"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/top_action_padding"
-        android:background="?attr/selectableItemBackground"
-        android:padding="8dp"
-        android:text="@string/action_settings"
-        android:textColor="@color/text_secondary"
-        android:textSize="14sp"
+        android:orientation="horizontal"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
 
-    <!-- 中部核心区：阶段状态 / 倒计时 / 组次统计，垂直居中且自适应 -->
+        <TextView
+            android:id="@+id/btn_plan"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:gravity="start"
+            android:padding="8dp"
+            android:text="@string/action_plan"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/btn_settings"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:gravity="center"
+            android:padding="8dp"
+            android:text="@string/action_settings"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/btn_reset"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:gravity="end"
+            android:padding="8dp"
+            android:text="@string/action_reset"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- 当前动作标题与动作状态 -->
+    <LinearLayout
+        android:id="@+id/header_row"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/top_bar">
+
+        <TextView
+            android:id="@+id/tv_exercise"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            tools:text="动作 1/3 · 深蹲" />
+
+        <TextView
+            android:id="@+id/tv_exercise_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_status_chip"
+            android:paddingStart="8dp"
+            android:paddingTop="2dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="2dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            tools:text="进行中" />
+    </LinearLayout>
+
+    <!-- 整体训练进度 -->
+    <ProgressBar
+        android:id="@+id/pb_overall"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="0dp"
+        android:layout_height="6dp"
+        android:layout_marginTop="10dp"
+        android:max="100"
+        android:progress="0"
+        android:progressTint="@color/accent_idle"
+        android:progressBackgroundTint="@color/ring_track"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/header_row" />
+
+    <TextView
+        android:id="@+id/tv_overall"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/pb_overall"
+        tools:text="整体进度 3/10 组" />
+
+    <!-- 中部核心区：阶段 / 倒计时 / 组次统计 -->
     <LinearLayout
         android:id="@+id/core_area"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_marginTop="52dp"
-        android:layout_marginBottom="12dp"
+        android:layout_marginTop="8dp"
         android:gravity="center_horizontal|center_vertical"
         android:orientation="vertical"
-        app:layout_constraintBottom_toTopOf="@id/btn_main"
+        app:layout_constraintBottom_toTopOf="@id/btn_records"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
+        app:layout_constraintTop_toBottomOf="@id/tv_overall">
 
         <TextView
             android:id="@+id/tv_phase"
@@ -63,7 +148,7 @@
             android:id="@+id/ring_container"
             android:layout_width="@dimen/ring_size"
             android:layout_height="@dimen/ring_size"
-            android:layout_marginTop="14dp">
+            android:layout_marginTop="10dp">
 
             <com.xxss0903.trainalaram.widget.ProgressRingView
                 android:id="@+id/ring"
@@ -81,7 +166,7 @@
                 android:fontFamily="monospace"
                 android:includeFontPadding="false"
                 android:textColor="@color/text_primary"
-                android:textSize="48sp"
+                android:textSize="44sp"
                 tools:text="00:30" />
         </FrameLayout>
 
@@ -89,10 +174,10 @@
             android:id="@+id/tv_set_info"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="12dp"
             android:textColor="@color/text_primary"
-            android:textSize="22sp"
-            tools:text="第 1 组" />
+            android:textSize="20sp"
+            tools:text="第 1/4 组 · 目标 12 次" />
 
         <TextView
             android:id="@+id/tv_stats"
@@ -102,7 +187,7 @@
             android:gravity="center"
             android:textColor="@color/text_secondary"
             android:textSize="13sp"
-            tools:text="已完成 2 组 · 锻炼 01:00 · 休息 00:30" />
+            tools:text="本动作 已完成 2 组 · 锻炼 01:00 · 休息 00:30" />
 
         <TextView
             android:id="@+id/tv_last_record"
@@ -115,12 +200,30 @@
             tools:text="上组 00:30 · 组间休息 00:15" />
     </LinearLayout>
 
+    <!-- 组次记录入口：查看 / 补录 / 修改 -->
+    <TextView
+        android:id="@+id/btn_records"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="6dp"
+        android:background="?attr/selectableItemBackground"
+        android:paddingStart="12dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="6dp"
+        android:text="@string/action_records"
+        android:textColor="@color/text_secondary"
+        android:textSize="14sp"
+        app:layout_constraintBottom_toTopOf="@id/btn_main"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
     <!-- 主操作按钮：所有阶段下都是一步操作 -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_main"
         android:layout_width="0dp"
         android:layout_height="@dimen/main_button_height"
-        android:layout_marginBottom="24dp"
+        android:layout_marginBottom="20dp"
         android:insetBottom="0dp"
         android:insetTop="0dp"
         android:text="@string/action_start"
