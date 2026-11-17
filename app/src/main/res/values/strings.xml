@@ -1,12 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TrainAlaram</string>
-    <string name="action_settings">Settings</string>
-    <!-- Strings used for fragments for navigation -->
-    <string name="first_fragment_label">First Fragment</string>
-    <string name="second_fragment_label">Second Fragment</string>
-    <string name="next">Next</string>
-    <string name="previous">Previous</string>
 
-    <string name="hello_first_fragment">Hello first fragment</string>
-    <string name="hello_second_fragment">Hello second fragment. Arg: %1$s</string>
+    <!-- 阶段 -->
+    <string name="phase_idle">准备开始</string>
+    <string name="phase_work">锻炼中</string>
+    <string name="phase_rest">休息中</string>
+    <string name="phase_rest_done">休息结束 · 可开始下一组</string>
+
+    <!-- 主按钮（各阶段均为一步操作） -->
+    <string name="action_start">开始训练</string>
+    <string name="action_finish_set">完成本组</string>
+    <string name="action_skip_rest">跳过休息</string>
+    <string name="action_start_next">开始第 %1$d 组</string>
+
+    <!-- 顶部操作 -->
+    <string name="action_settings">设置</string>
+    <string name="action_reset">重置</string>
+    <string name="settings_title">时长设置</string>
+    <string name="settings_presets">常用预设（锻炼 / 休息，秒）</string>
+    <string name="settings_work">锻炼时长（秒）</string>
+    <string name="settings_rest">休息时长（秒）</string>
+    <string name="save">保存</string>
+    <string name="cancel">取消</string>
+    <string name="settings_invalid">请输入 1~3600 之间的整数</string>
+
+    <!-- 组次与统计 -->
+    <string name="set_info_current">第 %1$d 组</string>
+    <string name="set_info_next">第 %1$d 组 待开始</string>
+    <string name="stats_summary">已完成 %1$d 组 · 锻炼 %2$s · 休息 %3$s</string>
+    <string name="last_record">上组 %1$s · 组间休息 %2$s</string>
+    <string name="no_record">尚无记录</string>
+    <string name="rest_done_hint">休息结束，请开始下一组</string>
+
+    <!-- 恢复与重置 -->
+    <string name="restored_hint">已恢复上次训练进度</string>
+    <string name="reset_title">重置本次训练</string>
+    <string name="reset_message">将清空当前组次与所有计时记录，是否继续？</string>
+    <string name="reset_confirm">重置</string>
 </resources>

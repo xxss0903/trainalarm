@@ -1,34 +1,135 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:paddingStart="@dimen/screen_padding"
+    android:paddingEnd="@dimen/screen_padding"
     tools:context=".MainActivity">
 
-    <com.google.android.material.appbar.AppBarLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:theme="@style/Theme.TrainAlaram.AppBarOverlay">
-
-        <androidx.appcompat.widget.Toolbar
-            android:id="@+id/toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            android:background="?attr/colorPrimary"
-            app:popupTheme="@style/Theme.TrainAlaram.PopupOverlay" />
-
-    </com.google.android.material.appbar.AppBarLayout>
-
-    <include layout="@layout/content_main" />
-
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fab"
+    <!-- 顶部：重置 / 设置，均为一次点击可达 -->
+    <TextView
+        android:id="@+id/btn_reset"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_marginEnd="@dimen/fab_margin"
-        android:layout_marginBottom="16dp"
-        app:srcCompat="@android:drawable/ic_dialog_email" />
+        android:layout_marginTop="@dimen/top_action_padding"
+        android:background="?attr/selectableItemBackground"
+        android:padding="8dp"
+        android:text="@string/action_reset"
+        android:textColor="@color/text_secondary"
+        android:textSize="14sp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 
-</androidx.coordinatorlayout.widget.CoordinatorLayout>
+    <TextView
+        android:id="@+id/btn_settings"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/top_action_padding"
+        android:background="?attr/selectableItemBackground"
+        android:padding="8dp"
+        android:text="@string/action_settings"
+        android:textColor="@color/text_secondary"
+        android:textSize="14sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- 中部核心区：阶段状态 / 倒计时 / 组次统计，垂直居中且自适应 -->
+    <LinearLayout
+        android:id="@+id/core_area"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginTop="52dp"
+        android:layout_marginBottom="12dp"
+        android:gravity="center_horizontal|center_vertical"
+        android:orientation="vertical"
+        app:layout_constraintBottom_toTopOf="@id/btn_main"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:id="@+id/tv_phase"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/phase_idle"
+            android:textColor="@color/accent_idle"
+            android:textSize="18sp" />
+
+        <FrameLayout
+            android:id="@+id/ring_container"
+            android:layout_width="@dimen/ring_size"
+            android:layout_height="@dimen/ring_size"
+            android:layout_marginTop="14dp">
+
+            <com.xxss0903.trainalaram.widget.ProgressRingView
+                android:id="@+id/ring"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                app:ringColor="@color/accent_idle"
+                app:ringStrokeWidth="@dimen/ring_stroke"
+                app:ringTrackColor="@color/ring_track" />
+
+            <TextView
+                android:id="@+id/tv_time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:fontFamily="monospace"
+                android:includeFontPadding="false"
+                android:textColor="@color/text_primary"
+                android:textSize="48sp"
+                tools:text="00:30" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/tv_set_info"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp"
+            tools:text="第 1 组" />
+
+        <TextView
+            android:id="@+id/tv_stats"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            tools:text="已完成 2 组 · 锻炼 01:00 · 休息 00:30" />
+
+        <TextView
+            android:id="@+id/tv_last_record"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            tools:text="上组 00:30 · 组间休息 00:15" />
+    </LinearLayout>
+
+    <!-- 主操作按钮：所有阶段下都是一步操作 -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_main"
+        android:layout_width="0dp"
+        android:layout_height="@dimen/main_button_height"
+        android:layout_marginBottom="24dp"
+        android:insetBottom="0dp"
+        android:insetTop="0dp"
+        android:text="@string/action_start"
+        android:textColor="@color/on_accent"
+        android:textSize="20sp"
+        app:backgroundTint="@color/accent_idle"
+        app:cornerRadius="32dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
