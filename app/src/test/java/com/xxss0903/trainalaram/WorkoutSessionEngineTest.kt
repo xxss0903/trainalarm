@@ -38,7 +38,7 @@ class WorkoutSessionEngineTest {
     private fun newEngine(clock: FakeClock): WorkoutSessionEngine =
         WorkoutSessionEngine(clock = { clock.elapsed }, wallClock = { clock.wall })
 
-    /** 默认动作参数：3 组 × 12 次 · 锻炼 30 秒 / 休息 15 秒 */
+    /** 默认动作参数：3 组 × 1 次 · 锻炼 30 秒 / 休息 15 秒 */
     private fun engineWith(clock: FakeClock, vararg names: String): WorkoutSessionEngine =
         newEngine(clock).apply { names.forEach { addExercise(it) } }
 
@@ -109,8 +109,8 @@ class WorkoutSessionEngineTest {
         val set = engine.currentRun!!.sets.single()
         assertEquals(1, set.setIndex)
         assertEquals(30_000L, set.actualDurationMs)
-        assertEquals(12, set.targetReps)
-        assertEquals(12, set.actualReps)
+        assertEquals(WorkoutLimits.DEFAULT_REPS, set.targetReps)
+        assertEquals(WorkoutLimits.DEFAULT_REPS, set.actualReps)
         assertTrue(set.completed)
     }
 

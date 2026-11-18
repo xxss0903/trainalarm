@@ -45,7 +45,7 @@ object WorkoutLimits {
     const val DEFAULT_WORK_SEC = 30
     const val DEFAULT_REST_SEC = 15
     const val DEFAULT_SETS = 3
-    const val DEFAULT_REPS = 12
+    const val DEFAULT_REPS = 1
 
     fun clampWork(sec: Int): Int = sec.coerceIn(MIN_WORK_SEC, MAX_SEC)
     fun clampRest(sec: Int): Int = sec.coerceIn(MIN_REST_SEC, MAX_SEC)
